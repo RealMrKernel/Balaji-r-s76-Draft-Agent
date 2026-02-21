@@ -6,7 +6,7 @@ Provides advanced content generation using Google's Gemini API.
 import os
 import json
 from typing import Dict, Any, List, Optional
-import google.generativeai as genai
+import google.generativeai as genai # pyre-ignore
 from datetime import datetime
 
 
@@ -18,14 +18,16 @@ class GeminiContentGenerator:
     RAG integration, and performance-based optimization.
     """
     
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: Optional[str] = None):
         """
         Initialize Gemini content generator.
         
         Args:
             api_key: Gemini API key (defaults to environment variable)
         """
-        self.api_key = api_key or "AIzaSyCZaTKONsDBprIEXj9E6I5it0cH-wDvSwQ"
+        self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+        if not self.api_key:
+            print("⚠️  No GEMINI_API_KEY environment variable found. Set it to use AI generation (fallback offline templates will be used).")
         
         # Configure Gemini
         genai.configure(api_key=self.api_key)
@@ -43,9 +45,9 @@ class GeminiContentGenerator:
         self, 
         topic: str, 
         format_type: str = "story",
-        similar_posts: List[Dict] = None,
-        performance_insights: Dict = None,
-        config: Dict = None
+        similar_posts: Optional[List[Dict]] = None,
+        performance_insights: Optional[Dict] = None,
+        config: Optional[Dict] = None
     ) -> str:
         """
         Generate a LinkedIn post using Gemini with advanced prompting.
@@ -177,7 +179,7 @@ Generate a LinkedIn post that follows these guidelines and feels authentic to a 
     def _format_similar_posts(self, similar_posts: List[Dict]) -> str:
         """Format similar posts for context."""
         formatted = []
-        for i, post in enumerate(similar_posts[:3], 1):
+        for i, post in enumerate(similar_posts[:3], 1): # pyre-ignore
             title = post.get('title', 'Untitled')
             body_preview = post.get('body', '')[:100] + "..." if len(post.get('body', '')) > 100 else post.get('body', '')
             formatted.append(f"{i}. {title}\n   {body_preview}")
@@ -235,7 +237,7 @@ Return only the hooks, numbered 1-{count}.
         try:
             response = self.model.generate_content(prompt)
             hooks = response.text.strip().split('\n')
-            return [hook.strip() for hook in hooks if hook.strip()][:count]
+            return [hook.strip() for hook in hooks if hook.strip()][:count] # pyre-ignore
         except:
             return [
                 f"Here's what most people get wrong about {topic}:",
@@ -243,7 +245,7 @@ Return only the hooks, numbered 1-{count}.
                 f"The {topic} mistake that cost me weeks of work:"
             ]
     
-    def optimize_for_engagement(self, content: str, target_metrics: Dict = None) -> str:
+    def optimize_for_engagement(self, content: str, target_metrics: Optional[Dict] = None) -> str:
         """Optimize existing content for better engagement."""
         target_metrics = target_metrics or {"engagement_rate": 0.05, "comments": 10}
         
@@ -294,7 +296,7 @@ Return only the CTAs, numbered 1-5.
         try:
             response = self.model.generate_content(prompt)
             ctas = response.text.strip().split('\n')
-            return [cta.strip() for cta in ctas if cta.strip()][:5]
+            return [cta.strip() for cta in ctas if cta.strip()][:5] # pyre-ignore
         except:
             return [
                 f"What's your biggest {topic} challenge?",
@@ -317,7 +319,7 @@ def test_gemini_integration():
         )
         
         print("✅ Gemini integration successful!")
-        print(f"Generated content preview: {test_content[:100]}...")
+        print(f"Generated content preview: {test_content[:100]}...") # pyre-ignore
         return True
         
     except Exception as e:

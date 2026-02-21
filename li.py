@@ -17,11 +17,14 @@ from collections import Counter
 # Add the project root to Python path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Import scheduler and TimeWindow unconditionally as they are local and have no external deps
+from core.scheduler import Scheduler, TimeWindow # type: ignore
+
 # Try to import enhanced modules
 try:
-    from core.prompting import ContentGenerator
-    from core.retrieval import PostRetriever
-    from core.scheduler import Scheduler
+    from core.prompting import ContentGenerator # pyre-ignore
+    from core.retrieval import PostRetriever # pyre-ignore
+    from core.gemini_generator import test_gemini_integration # pyre-ignore
     ENHANCED_MODE = True
 except ImportError:
     ENHANCED_MODE = False
@@ -30,7 +33,7 @@ except ImportError:
 # Simple argument parsing (replacement for click)
 class SimpleArgs:
     def __init__(self):
-        self.args = sys.argv[1:] if len(sys.argv) > 1 else []
+        self.args = sys.argv[1:] if len(sys.argv) > 1 else [] # type: ignore
         self.command = self.args[0] if self.args else None
         self.flags = {}
         self.values = {}
@@ -100,6 +103,8 @@ def main():
                 print("Usage: python3 li.py post <draft.json> [--now] or python3 li.py post --schedule <schedule.json>")
                 return
             post_content(args)
+        elif args.command == "export":
+            export_posts(args)
         elif args.command == "replies":
             suggest_replies(args)
         elif args.command == "test-gemini":
@@ -139,6 +144,8 @@ Commands:
                                    Analyze performance metrics
   post <draft.json> [--now] OR post --schedule <schedule.json>
                                    Output ready-to-post content
+  export [--since PERIOD] [--output FILE]
+                                   Export generated posts to CSV or JSON
   replies [post_id] [--top N]      Suggest replies for engaging posts
   test-gemini                      Test Gemini API connection
 
@@ -178,7 +185,7 @@ def test_gemini():
         return
     
     try:
-        from core.gemini_generator import test_gemini_integration
+        from core.gemini_generator import test_gemini_integration # type: ignore
         success = test_gemini_integration()
         
         if success:
@@ -223,7 +230,7 @@ def generate_draft(topic: str, args):
     
     # Save draft
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    safe_topic = "".join(c for c in topic if c.isalnum() or c in (' ', '-', '_')).rstrip()[:30]
+    safe_topic = "".join(c for c in topic if c.isalnum() or c in (' ', '-', '_')).rstrip()[:30] # type: ignore
     output_file = f"data/posts/draft_{safe_topic.replace(' ', '_')}_{timestamp}.json"
     
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
@@ -362,7 +369,7 @@ def generate_plan(args):
     windows = get_optimal_windows()
     
     # Generate plan
-    plan_data = {
+    plan_data: Dict[str, Any] = {
         "week_of": week_of,
         "now": [
             {
@@ -392,7 +399,7 @@ def generate_plan(args):
                 "experiment": f"Test ±{config.get('experiment_spread_hours', 2)}h from optimal window"
             } for topic in topics
         ],
-        "recommended_windows": [w.to_dict() for w in windows[:5]],
+        "recommended_windows": [w.to_dict() for w in windows[:5]], # type: ignore
         "generated_at": datetime.now().isoformat()
     }
     
@@ -537,8 +544,8 @@ def generate_content(topic: str, format_type: str = "story") -> Dict[str, Any]:
     optimal_window = windows[0] if windows else TimeWindow("Tue", 10)
     
     # Create post structure
-    post_data = {
-        "id": f"post_{uuid.uuid4().hex[:8]}",
+    post_data: Dict[str, Any] = {
+        "id": f"post_{uuid.uuid4().hex[:8]}", # type: ignore
         "title": f"{format_type.title()}: {topic.title()}",
         "body": content,
         "tags": extract_tags(topic),
@@ -553,7 +560,7 @@ def generate_content(topic: str, format_type: str = "story") -> Dict[str, Any]:
                 "post_id": post.get('id', 'unknown'),
                 "reason": "semantic similarity"
             }
-            for post in similar_posts[:2]
+            for post in similar_posts[:2] # type: ignore
         ],
         "format": format_type,
         "generated_at": datetime.now().isoformat(),
@@ -670,7 +677,7 @@ def find_similar_posts(topic: str, limit: int = 3) -> List[Dict]:
     
     # Sort by similarity and return top results
     scored_posts.sort(key=lambda p: p['similarity_score'], reverse=True)
-    return scored_posts[:limit]
+    return scored_posts[:limit] # type: ignore
 
 def analyze_content_insights(topic: str, similar_posts: List[Dict]) -> Dict[str, Any]:
     """Analyze content insights for a topic."""
@@ -701,7 +708,7 @@ def analyze_content_insights(topic: str, similar_posts: List[Dict]) -> Dict[str,
         recommendations.append("Relatively new territory - good opportunity for original content")
     
     if common_tags:
-        recommendations.append(f"Consider using tags: {', '.join(common_tags[:3])}")
+        recommendations.append(f"Consider using tags: {', '.join(common_tags[:3])}") # type: ignore
     
     return {
         'topic': topic,
@@ -715,7 +722,7 @@ def analyze_content_insights(topic: str, similar_posts: List[Dict]) -> Dict[str,
                 'title': post.get('title'),
                 'similarity': post.get('similarity_score', 0)
             }
-            for post in similar_posts[:3]
+            for post in similar_posts[:3] # pyre-ignore
         ]
     }
 
@@ -727,12 +734,12 @@ def extract_tags(topic: str) -> List[str]:
     default_tags = ['linkedin', 'professional', 'insights']
     
     all_tags = list(set(base_tags + default_tags))
-    return all_tags[:5]
+    return all_tags[:5] # pyre-ignore
 
 def extract_cta(content: str) -> str:
     """Extract CTA from content."""
     lines = content.split('\n')
-    for line in reversed(lines[-3:]):
+    for line in reversed(lines[-3:]): # pyre-ignore
         if '?' in line and len(line.strip()) > 10:
             return line.strip()
     return "What are your thoughts?"
@@ -913,7 +920,7 @@ def queue_post(draft_file: str, args):
         with open(schedule_file, 'r') as f:
             schedule_data = json.load(f)
     else:
-        schedule_data = {"week_of": week_of, "slots": []}
+        schedule_data: Dict[str, Any] = {"week_of": week_of, "slots": []}
     
     # Check for conflicts
     conflict = any(
@@ -1062,7 +1069,7 @@ def analyze_metrics(args):
 def filter_metrics_by_time(metrics_data: list, since: str) -> list:
     """Filter metrics by time period."""
     if since.endswith('d'):
-        days = int(since[:-1])
+        days = int(since[:-1]) # pyre-ignore
         cutoff_date = datetime.now() - timedelta(days=days)
     else:
         try:
@@ -1101,7 +1108,7 @@ def analyze_metrics_data(metrics_data: list) -> dict:
         metrics_data,
         key=lambda m: m.get('engagement_rate', 0),
         reverse=True
-    )[:5]
+    )[:5] # type: ignore
     
     return {
         'summary': {
@@ -1136,8 +1143,8 @@ def display_metrics_summary(analysis: dict, metrics_data: list):
     best_posts = analysis.get('best_posts', [])
     if best_posts:
         print(f"\n🏆 Top Performing Posts:")
-        for post in best_posts[:3]:
-            post_id = post.get('post_id', 'Unknown')[:12]
+        for post in best_posts[:3]: # type: ignore
+            post_id = post.get('post_id', 'Unknown')[:12] # type: ignore
             engagement = post.get('engagement_rate', 0)
             impressions = post.get('impressions', 0)
             print(f"  {post_id} - {engagement:.1%} ({impressions:,} impressions)")
@@ -1166,6 +1173,148 @@ def suggest_replies(args):
     print("  1. Check your recent posts for high-engagement comments")
     print("  2. Reply with thoughtful questions or additional insights") 
     print("  3. Thank commenters and continue the conversation")
+
+def export_posts(args):
+    """Export posts to CSV or JSON based on a time interval."""
+    since = args.values.get('since')
+    output_file = args.values.get('output', 'export.csv')
+    
+    print("🔄 Exporting posts...")
+    
+    all_posts = load_all_posts()
+    all_metrics = load_all_metrics()
+    
+    # Create a mapping of post_id to its metrics
+    metrics_by_post_id = {
+        metric.get('post_id'): metric 
+        for metric in all_metrics 
+        if metric.get('post_id')
+    }
+    if not all_posts:
+        print("⚠️  No posts found to export.")
+        return
+        
+    filtered_posts = all_posts
+    
+    if since:
+        if since.endswith('d'):
+            days = int(since[:-1])
+            cutoff_date = datetime.now() - timedelta(days=days)
+        else:
+            try:
+                cutoff_date = datetime.strptime(since, '%Y-%m-%d')
+            except ValueError:
+                print(f"❌ Invalid date format: {since}. Use YYYY-MM-DD or Xd format")
+                return
+                
+        filtered_posts = []
+        for post in all_posts:
+            date_str = post.get('generated_at') or post.get('published_at') or post.get('enhanced_at')
+            if date_str:
+                try:
+                    pub_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                    if pub_date >= cutoff_date:
+                        filtered_posts.append(post)
+                except ValueError:
+                    continue
+    
+    if not filtered_posts:
+        print(f"⚠️  No posts found to export matching the criteria.")
+        return
+        
+    is_json = output_file.lower().endswith('.json')
+    out_dir = os.path.dirname(output_file)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+    
+    if is_json:
+        # Merge metrics before exporting JSON
+        for post in filtered_posts:
+            post_id = post.get('id')
+            if post_id and post_id in metrics_by_post_id:
+                metrics = metrics_by_post_id[post_id]
+                post['metrics'] = {
+                    'impressions': metrics.get('impressions', 0),
+                    'reactions': metrics.get('reactions', 0),
+                    'comments': metrics.get('comments', 0),
+                    'shares': metrics.get('shares', 0),
+                    'clicks': metrics.get('clicks', 0),
+                    'engagement_rate': metrics.get('engagement_rate', 0.0)
+                }
+                
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(filtered_posts, f, indent=2)
+        print(f"✅ Exported {len(filtered_posts)} posts with metrics to JSON: {output_file}")
+    else:
+        try:
+            import csv
+            fieldnames = [
+                'id', 'title', 'tags', 'format', 'generated_at', 'cta', 'body',
+                'impressions', 'reactions', 'comments', 'shares', 'clicks', 'engagement_rate'
+            ]
+            with open(output_file, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames, quoting=csv.QUOTE_ALL, lineterminator='\n')
+                writer.writeheader()
+                for post in filtered_posts:
+                    post_id = post.get('id', '')
+                    metrics = metrics_by_post_id.get(post_id, {})
+                    
+                    writer.writerow({
+                        'id': post_id,
+                        'title': post.get('title', ''),
+                        'tags': ', '.join(post.get('tags', [])),
+                        'format': post.get('format', ''),
+                        'generated_at': post.get('generated_at', ''),
+                        'cta': post.get('cta', ''),
+                        'body': post.get('body', ''),
+                        'impressions': metrics.get('impressions', 0),
+                        'reactions': metrics.get('reactions', 0),
+                        'comments': metrics.get('comments', 0),
+                        'shares': metrics.get('shares', 0),
+                        'clicks': metrics.get('clicks', 0),
+                        'engagement_rate': metrics.get('engagement_rate', 0.0)
+                    })
+            print(f"✅ Exported {len(filtered_posts)} posts with metrics to CSV: {output_file}")
+        except Exception as e:
+            print(f"❌ Error exporting to CSV: {str(e)}")
+
+def load_config():
+    """Load configuration from JSON file."""
+    try:
+        with open("config.json", 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {
+            "topics": ["product", "engineering", "founder"],
+            "tone": "practical, concise, conversational"
+        }
+
+def get_optimal_windows():
+    """Get optimal posting windows."""
+    try:
+        scheduler = Scheduler()
+        return scheduler.optimal_windows
+    except Exception:
+        return [TimeWindow("Tue", 10), TimeWindow("Thu", 11), TimeWindow("Wed", 14)]
+
+def display_draft_next_steps(output_file: str, post_data: dict):
+    """Display next steps after saving the draft."""
+    print("\n🚀 Next Steps:")
+    print(f"  1. python3 li.py queue {output_file}")
+    print(f"  2. python3 li.py post {output_file}")
+
+def display_post_preview(post_data: dict):
+    """Display a formatted preview of the post."""
+    print(f"\n📝 {post_data['title']}")
+    print("=" * 50)
+    print(f"\n{post_data['body']}")
+    
+    print(f"\n📊 Post Details:")
+    print(f"  • Format: {post_data.get('format', 'N/A')}")
+    print(f"  • Tags: {', '.join(post_data.get('tags', []))}")
+    
+    target_window = post_data.get('target_window', {})
+    print(f"  • Suggested time: {target_window.get('day', 'TBD')} at {target_window.get('hour', 'TBD')}:00")
 
 if __name__ == '__main__':
     main()
