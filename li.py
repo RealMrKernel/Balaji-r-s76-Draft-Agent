@@ -107,6 +107,8 @@ def main():
             export_posts(args)
         elif args.command == "replies":
             suggest_replies(args)
+        elif args.command == "scrape":
+            scrape_linkedin_content(args)
         elif args.command == "test-gemini":
             test_gemini()
         else:
@@ -146,6 +148,8 @@ Commands:
                                    Output ready-to-post content
   export [--since PERIOD] [--output FILE]
                                    Export generated posts to CSV or JSON
+  scrape [url1] [url2] [--input file.xlsx] [--headless]
+                                   Scrape live LinkedIn analytics and post content
   replies [post_id] [--top N]      Suggest replies for engaging posts
   test-gemini                      Test Gemini API connection
 
@@ -1315,6 +1319,117 @@ def display_post_preview(post_data: dict):
     
     target_window = post_data.get('target_window', {})
     print(f"  • Suggested time: {target_window.get('day', 'TBD')} at {target_window.get('hour', 'TBD')}:00")
+
+def scrape_linkedin_content(args: SimpleArgs):
+    """Scrape LinkedIn posts and extract metrics/text into data directories."""
+    try:
+        from core.scraper import LinkedInScraper # pyre-ignore
+    except ImportError as e:
+        print("❌ Error: Missing dependencies for scraping.")
+        print("Please run: pip install playwright pandas openpyxl && playwright install chromium")
+        return
+
+    # Check for direct URLs or excel file
+    urls = []
+    if 'input' in args.values:
+        input_file = args.values['input']
+        if not os.path.exists(input_file):
+            print(f"❌ Error: Input file not found: {input_file}")
+            return
+        
+        # Simple extraction instead of importing pandas directly in li.py to maintain lightness
+        import pandas as pd # pyre-ignore
+        df = pd.read_excel(input_file, dtype=str)
+        url_col = None
+        for col in df.columns:
+            if any(kw in col.lower() for kw in ("url", "link", "post", "href")):
+                url_col = col
+                break
+        if url_col is None:
+            url_col = df.columns[0]
+        extracted_urls = df[url_col].dropna().str.strip().tolist()
+        urls.extend([u for u in extracted_urls if str(u).startswith("http")])
+    elif len(sys.argv) > 2 and sys.argv[2].startswith("http"): # pyre-ignore
+        # All extra arguments might be URLs
+        for arg in sys.argv[2:]: # pyre-ignore
+            if arg.startswith("http"):
+                urls.append(arg)
+    
+    if not urls:
+        print("❌ Error: No URLs provided.")
+        print("Usage: python3 li.py scrape <url1> <url2> [--headless] OR python3 li.py scrape --input <urls.xlsx>")
+        return
+
+    print(f"🚀 Initializing LinkedIn Scraper for {len(urls)} URLs...")
+    headless = 'headless' in args.flags
+    scraper = LinkedInScraper(headless=headless)
+    records = scraper.scrape_urls(urls)
+
+    if not records:
+        print("⚠️ No data was extracted.")
+        return
+
+    success_count = 0
+    
+    def safe_int(val) -> int:
+        if not val:
+            return 0
+        clean = str(val).replace(",", "").replace(".", "").strip()
+        return int(clean) if clean.isdigit() else 0
+
+    # Process records into standard JSON schemas
+    for idx, record in enumerate(records):
+        if record.get("error"):
+            print(f"⚠️ Failed to scrape {record['post_url'][:50]}...: {record['error']}")
+            continue
+            
+        post_id = f"scraped_{datetime.now().strftime('%Y%m%d%H%M%S')}_{idx}"
+        
+        # 1. Save to data/posts (text)
+        post_text = record.get("post_text", "").strip()
+        pub_date = record.get("post_date", "")
+        pub_time = record.get("post_time", "")
+        published_at = f"{pub_date} {pub_time}".strip()
+        
+        post_data = {
+            "id": post_id,
+            "title": f"Scraped Post: {published_at}",
+            "body": post_text,
+            "generated_at": datetime.now().isoformat(),
+            "format": "scraped",
+            "tags": [],
+            "source": record["post_url"]
+        }
+        
+        posts_dir = os.path.join(os.path.dirname(__file__), 'data', 'posts')
+        os.makedirs(posts_dir, exist_ok=True)
+        with open(os.path.join(posts_dir, f"{post_id}.json"), 'w', encoding='utf-8') as f:
+            json.dump(post_data, f, indent=2, ensure_ascii=False)
+
+        # 2. Save to data/metrics
+        metrics_data = {
+            "post_id": post_id,
+            "impressions": safe_int(record.get("impressions")),
+            "reactions": safe_int(record.get("reactions")),
+            "comments": safe_int(record.get("comments")),
+            "shares": safe_int(record.get("reposts")),
+            "clicks": 0, 
+            "extracted_at": datetime.now().isoformat()
+        }
+        
+        # Also include engagement rate if impression is high enough
+        if int(metrics_data["impressions"]) > 0: # pyre-ignore
+            eng_rate = (int(metrics_data["reactions"]) + int(metrics_data["comments"]) + int(metrics_data["shares"])) / int(metrics_data["impressions"]) # pyre-ignore
+            metrics_data["engagement_rate"] = round(eng_rate, 4) # pyre-ignore
+            
+        metrics_dir = os.path.join(os.path.dirname(__file__), 'data', 'metrics')
+        os.makedirs(metrics_dir, exist_ok=True)
+        with open(os.path.join(metrics_dir, f"{post_id}.json"), 'w', encoding='utf-8') as f:
+            json.dump(metrics_data, f, indent=2, ensure_ascii=False)
+            
+        success_count += 1
+        
+    print(f"\n✅ Scraped and saved {success_count}/{len(urls)} posts and metrics to data/ folders!")
 
 if __name__ == '__main__':
     main()
