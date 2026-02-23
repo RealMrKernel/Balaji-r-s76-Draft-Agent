@@ -18,5 +18,16 @@
     "clicks": 0,
     "extracted_at": "2026-02-23T10:34:37.873643",
     "engagement_rate": 0.0431
+  },
+  {
+    "post_id": "urn_li_activity_7396219316272009216",
+    "impressions": 3365,
+    "reactions": 114,
+    "comments": 30,
+    "shares": 1,
+    "clicks": 0,
+    "extracted_at": "2026-02-23T12:14:30.327776",
+    "published_at": "17 nov 2025 16:15",
+    "engagement_rate": 0.0431
   }
 ]
