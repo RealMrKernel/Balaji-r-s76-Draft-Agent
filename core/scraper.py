@@ -240,6 +240,10 @@ def extract_post_text_from_post_page(page_text: str) -> str:
     La pagina del post ha struttura diversa da quella analytics:
     il testo si trova tra l'header autore e la sezione commenti/reazioni.
     """
+    # Sanity check for "Page not found" or "Questa pagina non esiste" LinkedIn error pages
+    if "Questa pagina non esiste" in page_text or "Page not found" in page_text:
+        return "[PAGE NOT FOUND]"
+
     # Rimuovi rumore di navigazione iniziale (barra nav, notifiche, ecc.)
     # Cerca l'inizio del post: di solito dopo "• Xh" o "• Xm" (tempo relativo)
     # oppure dopo una data tipo "17 nov"
@@ -297,6 +301,7 @@ def extract_post_text_from_post_page(page_text: str) -> str:
 def scrape_post(page, post_url: str, download_dir: Path) -> dict:
     result = {
         "post_url":              post_url,
+        "analytics_url":         "",
         "post_text":             "",
         "post_date":             "",
         "post_time":             "",
@@ -326,38 +331,49 @@ def scrape_post(page, post_url: str, download_dir: Path) -> dict:
     }
 
     try:
-        a_url = analytics_url(post_url)
-        print(f"    → {a_url}")
-
-        # ── 1. Naviga alla pagina analytics ───────────────────────────────
-        page.goto(a_url, wait_until="domcontentloaded", timeout=30000)
-
-        try:
-            page.wait_for_selector(
-                "button:has-text('Esporta'), button:has-text('Export'), "
-                "[aria-label*='Esporta'], [aria-label*='Export']",
-                timeout=15000
-            )
-        except PlaywrightTimeout:
-            pass
-
-        time.sleep(4)
-
-        # Controllo redirect login
-        if any(x in page.url for x in ("authwall", "/login", "checkpoint", "uas/authenticate")):
-            result["error"] = "Redirect al login – sessione scaduta"
-            print("    ✗ Redirect login")
-            return result
-
-        # ── 2. Visita il post originale e leggi il testo COMPLETO ──────────
-        #    La pagina analytics tronca il testo con "visualizza altro".
-        #    Visitiamo quindi direttamente l'URL del post, clicchiamo
-        #    "visualizza altro" per espandere, e solo dopo torniamo all'analytics.
+        a_url = None
+        
+        # ── 1. Visita prima il post originale per estrarre il testo e l'URL Analytics corretto ──────────
         try:
             page.goto(post_url, wait_until="domcontentloaded", timeout=20000)
             time.sleep(3)
 
-            # Clicca tutti i pulsanti "visualizza altro" / "see more" presenti
+            # Controllo redirect login
+            if any(x in page.url for x in ("authwall", "/login", "checkpoint", "uas/authenticate")):
+                result["error"] = "Redirect al login – sessione scaduta"
+                print("    ✗ Redirect login")
+                return result
+
+            # Estrai l'URL Analytics corretto dalla pagina o dalla navigazione
+            try:
+                # 1. Cerca il link del pulsante "Visualizza analisi" (se presente)
+                analytics_link = page.query_selector("a[href*='/analytics/post-summary/']")
+                if analytics_link:
+                    href = analytics_link.get_attribute("href")
+                    if href:
+                        a_url = href if href.startswith("http") else f"https://www.linkedin.com{href}"
+            except Exception:
+                pass
+                
+            if not a_url:
+                # 2. Se l'URL finale della pagina è cambiato in activity-...
+                if "activity-" in page.url:
+                    m = re.search(r"activity-(\d{10,})", page.url)
+                    if m:
+                        a_url = f"https://www.linkedin.com/analytics/post-summary/urn:li:activity:{m.group(1)}/"
+            
+            if not a_url:
+                # 3. Cerca l'URN dell'attività direttamente nel codice HTML (meta tags)
+                html = page.content()
+                m = re.search(r"urn:li:activity:\d{10,}", html)
+                if m:
+                    a_url = f"https://www.linkedin.com/analytics/post-summary/{m.group(0)}/"
+            
+            # 4. Fallback (vecchio metodo regex stringa)
+            if not a_url:
+                a_url = analytics_url(post_url)
+
+            # Clicca tutti i pulsanti "visualizza altro" / "see more" presenti per leggere il testo
             for see_more_sel in [
                 "button.feed-shared-inline-show-more-text__see-more-less-toggle",
                 "button:has-text('visualizza altro')",
@@ -376,12 +392,24 @@ def scrape_post(page, post_url: str, download_dir: Path) -> dict:
 
             time.sleep(1)
             post_page_text = page.inner_text("body")
+            
+            # Check for dead page before extracting
+            if "Questa pagina non esiste" in post_page_text or "Page not found" in post_page_text:
+                result["error"] = "Post non trovato o eliminato"
+                print("    ✗ Post non trovato")
+                return result
+                
             result["post_text"] = extract_post_text_from_post_page(post_page_text)
         except Exception as e_txt:
             print(f"    ⚠ Impossibile leggere testo dal post originale: {e_txt}")
             result["post_text"] = ""
+            if not a_url:
+                a_url = analytics_url(post_url)
 
-        # ── 3. Torna alla pagina analytics, clicca "Esporta" ─────────────
+        result["analytics_url"] = a_url or ""
+        print(f"    → Analytics: {a_url}")
+
+        # ── 2. Naviga alla pagina analytics, trovata dinamicamente ─────────────
         page.goto(a_url, wait_until="domcontentloaded", timeout=30000)
         try:
             page.wait_for_selector(
@@ -485,6 +513,7 @@ class LinkedInScraper:
     def __init__(self, headless: bool = False, delay: float = 4.0):
         self.headless = headless
         self.delay = delay
+        self.auth_file = Path(__file__).parent.parent / "data" / "auth.json"
 
     def scrape_urls(self, urls: list[str]) -> list[dict]:
         """Scrape a list of LinkedIn post URLs and return extracted data dicts."""
@@ -501,31 +530,63 @@ class LinkedInScraper:
                     args=["--start-maximized"],
                     downloads_path=str(download_dir),
                 )
-                context = browser.new_context(
-                    viewport={"width": 1400, "height": 900},
-                    accept_downloads=True,
-                    user_agent=(
+                # If auth file exists, load it
+                context_args = {
+                    "viewport": {"width": 1400, "height": 900},
+                    "accept_downloads": True,
+                    "user_agent": (
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                         "AppleWebKit/537.36 (KHTML, like Gecko) "
                         "Chrome/120.0.0.0 Safari/537.36"
-                    ),
-                )
+                    )
+                }
+                
+                if self.auth_file.exists():
+                    print("🔄 Caricamento sessione salvata...")
+                    context_args["storage_state"] = str(self.auth_file)
+                    
+                context = browser.new_context(**context_args)
                 page = context.new_page()
 
-                print("\n🔐 Apro LinkedIn … Effettua il login nel browser.")
-                print("   (Attendo fino a 3 minuti per permetterti di fare il login manually se necessario)\n")
-                page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded")
-
+                print("\n🔐 Apro LinkedIn ...")
+                page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded")
+                
+                # Check if we are logged in by looking for global nav
+                is_logged_in = False
                 try:
-                    # Aspetta la barra di ricerca o la foto profilo (segno che sei loggato)
                     page.wait_for_selector(
                         ".search-global-typeahead, .global-nav__me-photo, "
                         "[data-test-global-nav-search], #global-nav-search",
-                        timeout=180000
+                        timeout=5000
                     )
-                    print("   ✅  Login rilevato – avvio scraping …\n")
+                    is_logged_in = True
+                    print("   ✅  Login attivo rilevato – avvio scraping …\n")
                 except PlaywrightTimeout:
-                    print("   ⚠️  Timeout login, procedo comunque (potrebbe fallire o richiedere authwall) …\n")
+                    is_logged_in = False
+
+                # If headless is True but we aren't logged in, fail fast rather than stalling
+                if not is_logged_in and self.headless:
+                    print("   ❌ Errore: Sessione inesistente o scaduta.")
+                    print("      Disattiva 'Run in Background' e lancia lo scraping per effettuare il login!")
+                    return [{"post_url": u, "error": "Login required. Run without headless mode first."} for u in urls]
+                
+                # If visible and not logged in, give the user time to do it manually
+                if not is_logged_in and not self.headless:
+                    print("   👀 Attendo fino a 3 minuti per permetterti di fare il login manualmente...")
+                    page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded")
+                    try:
+                        page.wait_for_selector(
+                            ".search-global-typeahead, .global-nav__me-photo, "
+                            "[data-test-global-nav-search], #global-nav-search",
+                            timeout=180000
+                        )
+                        print("   ✅  Login manuale rilevato!")
+                        # Save the state for future headless runs!
+                        self.auth_file.parent.mkdir(exist_ok=True)
+                        context.storage_state(path=str(self.auth_file))
+                        print("   💾 Sessione salvata con successo per i futuri avvii in background!")
+                    except PlaywrightTimeout:
+                        print("   ⚠️  Timeout login, procedo comunque (potrebbe fallire o richiedere authwall) …\n")
 
                 for i, url in enumerate(urls, start=1):
                     print(f"[{i:>3}/{len(urls)}] {url[:90]}")
@@ -544,3 +605,105 @@ class LinkedInScraper:
                 pass
                 
         return records
+
+def clean_scraped_post_data(post_data: dict) -> dict:
+    """
+    Takes the raw text from the scraper, processes hashtags, cleans boilerplate 
+    profiles and footers, and normalizes the newlines into spaces.
+    Returns the updated post_data dictionary.
+    """
+    import re
+    
+    original_title = post_data.get("title", "")
+    original_body = post_data.get("body", "")
+
+    # Clean the body (remove header)
+    lines = original_body.split("\n")
+    start_index = 0
+    for i, line in enumerate(lines):
+        if "Visibile a tutti su LinkedIn e altrove" in line:
+            start_index = i + 1
+            break
+            
+    # Clean the body (remove footer)
+    end_index = len(lines)
+    for i in range(start_index, len(lines)):
+        line = lines[i].strip()
+        if line == "Attiva per visualizzare un’immagine più grande," or line == "Il documento è stato caricato" or " altre persone" in line:
+            end_index = i
+            # Step back if the previous line is a number (e.g. "114" people liked)
+            if end_index > 0 and lines[end_index - 1].strip().isdigit():
+                end_index -= 1
+            break
+            
+    # Also trim trailing empty lines before the footer
+    while end_index > start_index and not lines[end_index - 1].strip():
+        end_index -= 1
+
+    cleaned_body_lines = lines[start_index:end_index]
+    
+    # Extract Tags
+    tags = []
+    
+    # Walk backwards from the end of the cleaned body to find the line with tags
+    for i in range(len(cleaned_body_lines) - 1, -1, -1):
+        line = cleaned_body_lines[i]
+        
+        if "#" in line:
+            extracted_tags = re.findall(r'#\w+', line)
+            if extracted_tags:
+                for tag in extracted_tags:
+                    if tag not in tags:
+                        tags.append(tag)
+                        
+                for tag in extracted_tags:
+                    line = re.sub(rf'{tag}(?!\w)', '', line)
+                
+                cleaned_body_lines[i] = line.strip()
+                
+                if not cleaned_body_lines[i]:
+                    cleaned_body_lines.pop(i)
+                break
+            
+    # Replace any formatting \n (or stray \r) with spaces to form a single line of text
+    cleaned_body_lines = [l.replace('\r', '').replace('\n', ' ').strip() for l in cleaned_body_lines]
+            
+    # Re-join on space
+    cleaned_body_text = " ".join(l for l in cleaned_body_lines if l).strip()
+    # collapse multiple spaces into one space
+    cleaned_body_text = re.sub(r'\s+', ' ', cleaned_body_text).strip()
+    
+    # Extract new title (first sentence or up to 150 chars)
+    new_title = ""
+    if cleaned_body_text:
+        if len(cleaned_body_text) > 150:
+            first_sentence = cleaned_body_text.split('.')[0] + "."
+            new_title = first_sentence if len(first_sentence) < 150 else cleaned_body_text[:147] + "..."
+        else:
+            new_title = cleaned_body_text
+
+    post_data["title"] = new_title
+    post_data["body"] = cleaned_body_text
+    post_data["tags"] = tags
+    
+    return post_data
+
+def get_post_id_from_url(analytics_url: str, post_url: str, fallback_idx: int) -> str:
+    """
+    Extracts the URN ID from the analytics/post URL to use as file ID.
+    If none is found, relies on a fallback with timestamp.
+    """
+    import re
+    from datetime import datetime
+    
+    url_to_parse = analytics_url if analytics_url else post_url
+    
+    m = re.search(r"urn:li:activity:(\d{10,})", url_to_parse)
+    if m:
+        return f"urn_li_activity_{m.group(1)}"
+        
+    m2 = re.search(r"activity-(\d{10,})", url_to_parse)
+    if m2:
+        return f"urn_li_activity_{m2.group(1)}"
+        
+    return f"scraped_{datetime.now().strftime('%Y%m%d%H%M%S')}_{fallback_idx}"

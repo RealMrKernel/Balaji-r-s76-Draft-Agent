@@ -32,6 +32,12 @@
 - Content insights and recommendations
 - Top-performing post identification
 
+### 6. **Live Content Scraper** (`core/scraper.py` + `cli/li.py`)
+- Automated extraction of post metrics and text via UI or CLI
+- Data deduplication using LinkedIn URNs (`post_<id>.json`, `metrics_<id>.json`)
+- Automated Post Cleaning (removes profiles, footers, newlines, isolates tags)
+- Storicization of metrics (appends temporal engagement to `history_<id>.json`)
+
 ## 🏗️ System Architecture
 
 ```
@@ -49,8 +55,9 @@
 │   ├── retrieval.py     # RAG & semantic search
 │   └── schemas.py       # JSON validation schemas
 └── data/                 # Persistent storage
-    ├── posts/           # Historical posts for RAG
-    ├── metrics/         # Performance analytics
+    ├── posts/           # Historical and scraped posts for RAG (`post_<id>.json`)
+    ├── metrics/         # Performance analytics (`metrics_<id>.json`)
+    ├── history/         # Chronological metrics tracking (`history_<id>.json`)
     └── schedules/       # Weekly content plans
 ```
 

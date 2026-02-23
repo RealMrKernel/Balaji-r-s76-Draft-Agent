@@ -1383,7 +1383,9 @@ def scrape_linkedin_content(args: SimpleArgs):
             print(f"⚠️ Failed to scrape {record['post_url'][:50]}...: {record['error']}")
             continue
             
-        post_id = f"scraped_{datetime.now().strftime('%Y%m%d%H%M%S')}_{idx}"
+        # Extract from URL using the helper
+        from core.scraper import get_post_id_from_url, clean_scraped_post_data
+        post_id = get_post_id_from_url(record.get("analytics_url", ""), record.get("post_url", ""), idx)
         
         # 1. Save to data/posts (text)
         post_text = record.get("post_text", "").strip()
@@ -1401,9 +1403,12 @@ def scrape_linkedin_content(args: SimpleArgs):
             "source": record["post_url"]
         }
         
+        # Apply data cleaning
+        post_data = clean_scraped_post_data(post_data)
+        
         posts_dir = os.path.join(os.path.dirname(__file__), 'data', 'posts')
         os.makedirs(posts_dir, exist_ok=True)
-        with open(os.path.join(posts_dir, f"{post_id}.json"), 'w', encoding='utf-8') as f:
+        with open(os.path.join(posts_dir, f"post_{post_id}.json"), 'w', encoding='utf-8') as f:
             json.dump(post_data, f, indent=2, ensure_ascii=False)
 
         # 2. Save to data/metrics
@@ -1424,8 +1429,25 @@ def scrape_linkedin_content(args: SimpleArgs):
             
         metrics_dir = os.path.join(os.path.dirname(__file__), 'data', 'metrics')
         os.makedirs(metrics_dir, exist_ok=True)
-        with open(os.path.join(metrics_dir, f"{post_id}.json"), 'w', encoding='utf-8') as f:
+        with open(os.path.join(metrics_dir, f"metrics_{post_id}.json"), 'w', encoding='utf-8') as f:
             json.dump(metrics_data, f, indent=2, ensure_ascii=False)
+            
+        # 3. Save to data/history
+        history_dir = os.path.join(os.path.dirname(__file__), 'data', 'history')
+        os.makedirs(history_dir, exist_ok=True)
+        history_file = os.path.join(history_dir, f"history_{post_id}.json")
+        
+        history_data = []
+        if os.path.exists(history_file):
+            try:
+                with open(history_file, 'r', encoding='utf-8') as f:
+                    history_data = json.load(f)
+            except Exception:
+                history_data = []
+                
+        history_data.append(metrics_data)
+        with open(history_file, 'w', encoding='utf-8') as f:
+            json.dump(history_data, f, indent=2, ensure_ascii=False)
             
         success_count += 1
         

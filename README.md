@@ -20,8 +20,10 @@ A complete CLI-based LinkedIn content automation system that combines **Promptin
 - Considers historical performance data
 - Prevents scheduling conflicts and validates schedules
 
-### 📊 Metrics Ingester
-- Reads post analytics from CSV files
+### 📊 Metrics Ingester & Live Scraper
+- Automatically extracts real-time post text and analytics via scraping
+- Cleans and deduplicates scraped data automatically 
+- Maintains chronological histories for metric performance tracking
 - Analyzes performance trends by time, format, and topic
 - Updates recommendations based on actual engagement data
 
@@ -45,8 +47,9 @@ linkedin-agent/
 │   ├── retrieval.py  # RAG system
 │   └── schemas.py    # JSON validation
 ├── data/             # Persistent storage
-│   ├── posts/        # Historical posts
-│   ├── metrics/      # Performance data
+│   ├── posts/        # Historical and scraped posts
+│   ├── metrics/      # Current performance data
+│   ├── history/      # Historical metric snapshots
 │   └── schedules/    # Weekly plans
 └── config.json       # Configuration
 ```
@@ -67,7 +70,14 @@ python li.py init
 
 ## 📖 Usage Examples
 
-### 1. Generate Weekly Plan
+### 1. Launch the Visual Interface (GUI)
+The easiest way to interact with the agent is through the visual web interface built with Streamlit:
+```bash
+streamlit run gui.py
+```
+This will open a local web app in your browser where you can access the Content Scraper and other visual tools.
+
+### 2. Generate Weekly Plan
 ```bash
 # Create a Now-Next-Later content plan
 python li.py plan --accept
@@ -103,8 +113,11 @@ python li.py queue draft.json --time "Thu 14"
 python li.py queue draft.json --preview
 ```
 
-### 4. Analyze Performance
+### 4. Analyze and Scrape Metrics
 ```bash
+# Scrape live post metrics and save to history
+python li.py scrape https://www.linkedin.com/feed/update/urn:li:activity:1234...
+
 # Import metrics from CSV
 python li.py metrics --import metrics.csv
 
