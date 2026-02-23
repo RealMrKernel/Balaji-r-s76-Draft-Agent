@@ -70,6 +70,9 @@ playwright/.cache/
 # -----------------------------------------------------------------
 # Project-Specific Data Ignores
 # -----------------------------------------------------------------
+# Do not commit the local temp folders
+_extra_/*
+
 # Do not commit the local JSON dumps of scraped posts, metrics, history, and schedules
 data/history/*
 data/metrics/*

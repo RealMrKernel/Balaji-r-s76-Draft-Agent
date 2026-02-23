@@ -759,7 +759,7 @@ def load_all_posts() -> List[Dict]:
     for filename in os.listdir(posts_dir):
         if filename.endswith('.json'):
             try:
-                with open(os.path.join(posts_dir, filename), 'r') as f:
+                with open(os.path.join(posts_dir, filename), 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     if isinstance(data, list):
                         all_posts.extend(data)
@@ -781,7 +781,7 @@ def load_all_metrics() -> List[Dict]:
     for filename in os.listdir(metrics_dir):
         if filename.endswith('.json'):
             try:
-                with open(os.path.join(metrics_dir, filename), 'r') as f:
+                with open(os.path.join(metrics_dir, filename), 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     if isinstance(data, list):
                         all_metrics.extend(data)

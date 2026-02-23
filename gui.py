@@ -455,3 +455,60 @@ elif page == "🕸️ Content Scraper":
                     st.error(f"❌ Error during scraping: {str(e)}")
                     st.code(traceback.format_exc(), language="text")
                     st.info("💡 Ensure you have run: pip install playwright pandas openpyxl && playwright install chromium")
+
+    # --- Knowledge Base Export ---
+    st.markdown("---")
+    st.subheader("📥 Export Knowledge Base")
+    st.write("Scarica le statistiche e il contenuto di TUTTI i post in un unico file JSON, ottimizzato per essere utilizzato come knowledge base per un GEM personalizzato.")
+    
+    try:
+        from li import load_all_posts, load_all_metrics
+        kb_posts = load_all_posts()
+        kb_metrics = load_all_metrics()
+        
+        if kb_posts:
+            # Index metrics by post_id to combine them easily
+            metrics_by_id = {str(m.get("post_id", "")): m for m in kb_metrics if m.get("post_id")}
+            
+            kb_data = []
+            for p in kb_posts:
+                p_id = str(p.get("id", ""))
+                p_metrics = metrics_by_id.get(p_id, {})
+                
+                # Fallback per published_at: alcune metriche potrebbero non averlo, prova a prenderlo dal titolo se è uno "Scraped Post"
+                published_at = p_metrics.get("published_at", "")
+                title = p.get("title", "")
+                if not published_at and title.startswith("Scraped Post:"):
+                    published_at = title.replace("Scraped Post:", "").strip()
+                
+                kb_entry = {
+                    "id": p_id,
+                    "source": p.get("source", ""),
+                    "published_at": published_at,
+                    "title": title,
+                    "body": p.get("body", ""),
+                    "tags": p.get("tags", []),
+                    "impressions": p_metrics.get("impressions", 0),
+                    "reactions": p_metrics.get("reactions", 0),
+                    "comments": p_metrics.get("comments", 0),
+                    "shares": p_metrics.get("shares", 0),
+                    "clicks": p_metrics.get("clicks", 0)
+                }
+                kb_data.append(kb_entry)
+                
+            kb_json_str = json.dumps(kb_data, indent=2, ensure_ascii=False)
+            
+            st.download_button(
+                label="📦 Scarica JSON Knowledge Base",
+                data=kb_json_str,
+                file_name="linkedin_knowledge_base.json",
+                mime="application/json",
+                type="primary"
+            )
+        else:
+            st.info("Nessun post disponibile. Usa lo scraper per scaricare dei post prima di generare la Knowledge Base.")
+            
+    except Exception as e:
+        import traceback
+        st.error(f"Errore durante la generazione della Knowledge Base: {str(e)}")
+        st.code(traceback.format_exc(), language="text")
