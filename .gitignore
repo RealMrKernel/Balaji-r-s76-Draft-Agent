@@ -1,0 +1,86 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE / OS specific
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Playwright / Testing
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Streamlit
+.streamlit/
+*.pyc
+
+# -----------------------------------------------------------------
+# Project-Specific Data Ignores
+# -----------------------------------------------------------------
+# Do not commit the local JSON dumps of scraped posts, metrics, history, and schedules
+data/history/*
+data/metrics/*
+data/posts/*
+data/schedules/*
+
+# (Optional) Keep the folder structures in git by adding a .gitkeep file inside them
+!data/history/.gitkeep
+!data/metrics/.gitkeep
+!data/posts/.gitkeep
+!data/schedules/.gitkeep
+
+# Note: Any other file sitting directly in data/ (e.g. data/evaluation_dataset.json) 
+# is NOT ignored by the paths above, so they will be tracked by git properly.
