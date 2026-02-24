@@ -451,9 +451,9 @@ elif page == "🕸️ Content Scraper":
                             st.warning("⚠️ Scraper ran, but no valid data was extracted. Ensure the URLs are valid public or logged-in LinkedIn posts.")
                             
                 except Exception as e:
-                    import traceback
-                    st.error(f"❌ Error during scraping: {str(e)}")
-                    st.code(traceback.format_exc(), language="text")
+                    import logging
+                    logging.error("Error during scraping", exc_info=True)
+                    st.error("❌ An unexpected error occurred during scraping. Please check internal logs for details.")
                     st.info("💡 Ensure you have run: pip install playwright pandas openpyxl && playwright install chromium")
 
     # --- Knowledge Base Export ---
@@ -509,6 +509,6 @@ elif page == "🕸️ Content Scraper":
             st.info("Nessun post disponibile. Usa lo scraper per scaricare dei post prima di generare la Knowledge Base.")
             
     except Exception as e:
-        import traceback
-        st.error(f"Errore durante la generazione della Knowledge Base: {str(e)}")
-        st.code(traceback.format_exc(), language="text")
+        import logging
+        logging.error("Errore durante la generazione della Knowledge Base", exc_info=True)
+        st.error("❌ Si è verificato un errore imprevisto. Controlla i log interni per maggiori dettagli.")
